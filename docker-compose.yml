@@ -1,0 +1,80 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: gestionale_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-gestionale_db}
+      POSTGRES_USER: ${POSTGRES_USER:-gestionale_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gestionale_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gestionale_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gestionale_user} -d ${POSTGRES_DB:-gestionale_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gestionale_backend
+    restart: unless-stopped
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-secret-key-ente-pubblico-2026}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: "*"
+      POSTGRES_DB: ${POSTGRES_DB:-gestionale_db}
+      POSTGRES_USER: ${POSTGRES_USER:-gestionale_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gestionale_pass}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+    volumes:
+      - django_static:/app/staticfiles
+      - django_media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - gestionale_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gestionale_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - gestionale_net
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: gestionale_reverse_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "8080:80"
+    volumes:
+      - django_static:/app/staticfiles:ro
+      - django_media:/app/media:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - gestionale_net
+
+networks:
+  gestionale_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  django_static:
+  django_media:
